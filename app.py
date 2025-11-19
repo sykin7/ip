@@ -2,6 +2,7 @@ from flask import Flask, request, render_template, jsonify
 import requests
 import os
 import threading
+import ipaddress
 
 app = Flask(__name__)
 
@@ -9,43 +10,67 @@ app = Flask(__name__)
 TG_BOT_TOKEN = os.environ.get('TG_BOT_TOKEN')
 TG_CHAT_ID = os.environ.get('TG_CHAT_ID')
 
-# 核心修复：增强型 IP 获取逻辑
+# 核心辅助函数：判断是否为内网IP
+def is_public_ip(ip_str):
+    try:
+        ip = ipaddress.ip_address(ip_str)
+        # 排除内网(is_private) 和 本地回环(is_loopback)
+        return not ip.is_private and not ip.is_loopback
+    except ValueError:
+        return False
+
+# 增强型 IP 获取：暴力扫描所有可能的头，剔除内网IP
 def get_real_ip():
-    # 1. 优先尝试 Cloudflare 传递的真实 IP (很多云平台通用)
-    if request.headers.get('CF-Connecting-IP'):
-        return request.headers.get('CF-Connecting-IP')
+    # 定义所有可能包含真实IP的头部，按优先级排序
+    headers_to_check = [
+        'CF-Connecting-IP',      # Cloudflare
+        'X-Client-IP',           # 通用
+        'X-Real-IP',             # Nginx/通用
+        'X-Forwarded-For',       # 标准代理头
+        'Forwarded-For',
+        'True-Client-IP'
+    ]
+
+    for header in headers_to_check:
+        val = request.headers.get(header)
+        if val:
+            # 有些头包含多个IP，用逗号分隔 (例如: client, proxy1, proxy2)
+            # 我们拆分后，逐个检查，只要发现是公网IP，立马返回
+            ip_list = [x.strip() for x in val.split(',')]
+            for ip in ip_list:
+                if is_public_ip(ip):
+                    return ip
     
-    # 2. 尝试标准的 X-Real-IP
-    if request.headers.get('X-Real-IP'):
-        return request.headers.get('X-Real-IP')
-    
-    # 3. 尝试 X-Forwarded-For (取第一个)
-    if request.headers.get('X-Forwarded-For'):
-        try:
-            return request.headers.get('X-Forwarded-For').split(',')[0].strip()
-        except:
-            pass
-            
-    # 4. 如果都失败，才使用直接连接的 IP (虽然在 Docker 里通常是内网 IP)
+    # 如果上面都没找到公网IP，只能返回直连IP (虽然可能是内网IP，但也没办法了)
     return request.remote_addr
 
 def get_ip_info(ip):
-    # 如果获取到的是内网 IP (10.x.x.x, 172.16-31.x.x, 192.168.x.x), 直接不查询，防止报错
-    if ip.startswith('10.') or ip.startswith('192.168.') or (ip.startswith('172.') and 16 <= int(ip.split('.')[1]) <= 31):
-        return {'isp': '内网IP(无法定位)', 'country': 'Local Network', 'org': 'Local', 'as': 'N/A'}
+    # 再次防御：如果是内网 IP，直接不查询，避免显示空白
+    if not is_public_ip(ip):
+        return {
+            'isp': '内网环境(Local)', 
+            'country': '内部网络', 
+            'city': 'Leaflow内部',
+            'org': 'Private Network',
+            'as': 'N/A'
+        }
 
     try:
         url = f"http://ip-api.com/json/{ip}?lang=zh-CN&fields=status,message,country,regionName,city,isp,org,as,mobile,proxy,hosting,query"
-        resp = requests.get(url, timeout=4) # 超时缩短一点，避免卡顿
+        resp = requests.get(url, timeout=4)
         if resp.status_code == 200:
             return resp.json()
     except:
         pass
     return {}
 
-# 发送 TG 通知 (逻辑不变)
+# TG 通知逻辑 (保持不变)
 def send_telegram_alert(ip, data, user_agent):
     if not TG_BOT_TOKEN or not TG_CHAT_ID:
+        return
+
+    # 如果是内网IP，不发通知，避免刷屏
+    if not is_public_ip(ip):
         return
 
     ip_type = "🏠 家庭宽带/移动网络"
