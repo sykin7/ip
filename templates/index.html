@@ -3,109 +3,147 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>IP 身份透视</title>
+    <title>IP 全景侦探</title>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
     <style>
-        body {
-            background-color: #0f172a;
-            color: #e2e8f0;
-            font-family: 'Segoe UI', sans-serif;
-            display: flex;
-            justify-content: center;
-            align-items: center;
-            min-height: 100vh;
-            margin: 0;
-            padding: 20px;
-            box-sizing: border-box;
-        }
-        .container { width: 100%; max-width: 800px; }
-        .card { 
-            background: #1e293b; 
-            padding: 30px; 
-            border-radius: 16px; 
-            box-shadow: 0 10px 25px rgba(0,0,0,0.5); 
-            margin-bottom: 20px; 
-            border: 1px solid #334155;
-        }
-        .header { text-align: center; margin-bottom: 30px; }
-        .ip-display { 
-            font-size: 3.5rem; 
-            font-weight: 700; 
-            color: #38bdf8; 
-            letter-spacing: 1px; 
-            word-break: break-all;
-            text-shadow: 0 0 20px rgba(56, 189, 248, 0.3);
-        }
-        .label { text-transform: uppercase; letter-spacing: 1.5px; font-size: 0.8rem; color: #64748b; font-weight: 600; margin-bottom: 10px; }
+        :root { --bg: #0f172a; --card: #1e293b; --text: #e2e8f0; --accent: #38bdf8; --border: #334155; }
+        body { background-color: var(--bg); color: var(--text); font-family: 'Segoe UI', sans-serif; margin: 0; padding: 20px; display: flex; justify-content: center; }
+        .container { width: 100%; max-width: 1000px; }
         
-        /* 网格布局 */
-        .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 20px; }
-        .info-box { background: #0f172a; padding: 15px; border-radius: 10px; border: 1px solid #334155; }
-        .info-box span { display: block; font-size: 12px; color: #94a3b8; margin-bottom: 5px; }
-        .info-box div { font-size: 16px; font-weight: 500; color: #fff; }
+        /* 顶部大卡片 */
+        .hero-card { background: var(--card); padding: 40px; border-radius: 16px; text-align: center; border: 1px solid var(--border); margin-bottom: 20px; box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.3); position: relative; overflow: hidden; }
+        .ip-text { font-size: 3.5rem; font-weight: 800; color: var(--accent); text-shadow: 0 0 30px rgba(56, 189, 248, 0.2); margin: 10px 0; letter-spacing: 1px; word-break: break-all; }
+        .location-text { font-size: 1.2rem; color: #94a3b8; display: flex; justify-content: center; align-items: center; gap: 10px; }
+        
+        /* 信任分条 */
+        .score-container { margin-top: 20px; max-width: 400px; margin-left: auto; margin-right: auto; }
+        .score-bar-bg { background: #334155; height: 8px; border-radius: 4px; overflow: hidden; }
+        .score-bar-fill { height: 100%; border-radius: 4px; transition: width 1s ease; }
+        .score-text { display: flex; justify-content: space-between; font-size: 12px; color: #94a3b8; margin-top: 5px; }
 
-        /* 状态标签 */
-        .status-tag { display: inline-block; padding: 6px 12px; border-radius: 20px; font-size: 13px; font-weight: bold; margin-top: 5px; }
-        .status-good { background: rgba(16, 185, 129, 0.15); color: #34d399; border: 1px solid rgba(16, 185, 129, 0.3); }
-        .status-bad { background: rgba(239, 68, 68, 0.15); color: #f87171; border: 1px solid rgba(239, 68, 68, 0.3); }
+        /* 网格布局 */
+        .grid-container { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 20px; }
+        .panel { background: var(--card); border-radius: 12px; border: 1px solid var(--border); padding: 20px; }
+        .panel-title { font-size: 1.1rem; font-weight: 600; color: #fff; margin-bottom: 15px; border-bottom: 1px solid var(--border); padding-bottom: 10px; display: flex; align-items: center; gap: 8px; }
         
-        .footer { text-align: center; font-size: 12px; color: #475569; margin-top: 30px; }
+        /* 信息行 */
+        .info-row { display: flex; justify-content: space-between; padding: 8px 0; border-bottom: 1px solid #334155; font-size: 0.95rem; }
+        .info-row:last-child { border-bottom: none; }
+        .label { color: #94a3b8; }
+        .value { color: #fff; font-weight: 500; text-align: right; }
+        .tag { padding: 2px 8px; border-radius: 4px; font-size: 12px; font-weight: bold; }
+        .tag-green { background: rgba(16, 185, 129, 0.2); color: #34d399; }
+        .tag-red { background: rgba(244, 63, 94, 0.2); color: #f43f5e; }
+
+        /* 地图 */
+        #map { height: 250px; width: 100%; border-radius: 8px; z-index: 1; }
+
+        /* 响应式调整 */
+        @media (max-width: 600px) { .ip-text { font-size: 2.5rem; } .grid-container { grid-template-columns: 1fr; } }
     </style>
 </head>
 <body>
     <div class="container">
-        <div class="card header">
-            <div class="label">YOUR PUBLIC IP ADDRESS</div>
-            <div class="ip-display">{{ ip }}</div>
-            <div style="margin-top: 15px; color: #cbd5e1; font-size: 1.2rem;">
-                {{ data.get('country', '未知') }} {{ data.get('city', '') }}
+        <div class="hero-card">
+            <div style="text-transform: uppercase; color: #64748b; font-weight: 700; letter-spacing: 2px;">Your Public IP</div>
+            <div class="ip-text">{{ ip }}</div>
+            <div class="location-text">
+                <span>🚩 {{ data.get('country', '-') }}</span>
+                <span>🏙️ {{ data.get('city', '-') }}</span>
             </div>
-        </div>
-
-        <div class="grid">
-            <div class="card">
-                <h3 style="color: #e2e8f0; margin-top: 0; border-bottom: 1px solid #334155; padding-bottom: 10px;">📡 基础网络信息</h3>
-                <div class="grid" style="gap: 15px;">
-                    <div class="info-box"><span>运营商 (ISP)</span><div>{{ data.get('isp', '-') }}</div></div>
-                    <div class="info-box"><span>ASN 组织</span><div>{{ data.get('org', '-') }}</div></div>
-                    <div class="info-box"><span>时区</span><div>{{ data.get('timezone', '-') }}</div></div>
-                    <div class="info-box"><span>AS 编号</span><div>{{ data.get('as', '-') }}</div></div>
+            
+            <div class="score-container">
+                <div class="score-bar-bg">
+                    <div class="score-bar-fill" style="width: {{ score }}%; background: {{ 'linear-gradient(90deg, #f43f5e, #fbbf24)' if score < 60 else 'linear-gradient(90deg, #34d399, #38bdf8)' }};"></div>
                 </div>
-            </div>
-
-            <div class="card">
-                <h3 style="color: #e2e8f0; margin-top: 0; border-bottom: 1px solid #334155; padding-bottom: 10px;">🛡️ 风险评估</h3>
-                <div class="grid" style="gap: 15px;">
-                    
-                    <div class="info-box">
-                        <span>网络类型</span>
-                        {% if data.get('hosting') == True %}
-                            <div class="status-tag status-bad">🏢 数据中心/机房</div>
-                            <div style="font-size: 12px; margin-top: 8px; color: #94a3b8;">流媒体解锁概率较低</div>
-                        {% elif data.get('mobile') == True %}
-                            <div class="status-tag status-good">📱 移动数据网络</div>
-                            <div style="font-size: 12px; margin-top: 8px; color: #94a3b8;">原生 IP，质量极高</div>
-                        {% else %}
-                            <div class="status-tag status-good">🏠 家庭/商用宽带</div>
-                            <div style="font-size: 12px; margin-top: 8px; color: #94a3b8;">通常可解锁流媒体</div>
-                        {% endif %}
-                    </div>
-
-                    <div class="info-box">
-                        <span>匿名性检测</span>
-                        {% if data.get('proxy') == True %}
-                            <div class="status-tag status-bad">⚠️ 检测到代理/VPN</div>
-                        {% else %}
-                            <div class="status-tag status-good">✅ 无明显代理痕迹</div>
-                        {% endif %}
-                    </div>
-
+                <div class="score-text">
+                    <span>IP 纯净度评分</span>
+                    <span style="color: #fff; font-weight: bold;">{{ score }} / 100</span>
                 </div>
             </div>
         </div>
 
-        <div class="footer">
-            <p>User-Agent: {{ ua }}</p>
+        <div class="grid-container">
+            
+            <div class="panel">
+                <div class="panel-title">📡 网络指纹 (Network)</div>
+                <div class="info-row"><span class="label">运营商 (ISP)</span><span class="value">{{ data.get('isp', '-') }}</span></div>
+                <div class="info-row"><span class="label">ASN 组织</span><span class="value">{{ data.get('org', '-') }}</span></div>
+                <div class="info-row"><span class="label">AS 编号</span><span class="value">{{ data.get('as', '-') }}</span></div>
+                <div class="info-row"><span class="label">网络类型</span>
+                    <span class="value">
+                        {% if data.get('mobile') %}<span class="tag tag-green">移动网络</span>
+                        {% elif data.get('hosting') %}<span class="tag tag-red">数据中心</span>
+                        {% else %}<span class="tag tag-green">家庭宽带</span>{% endif %}
+                    </span>
+                </div>
+                <div class="info-row"><span class="label">代理检测</span>
+                    <span class="value">
+                        {% if data.get('proxy') %}<span class="tag tag-red">检测到代理</span>
+                        {% else %}<span class="tag tag-green">无明显痕迹</span>{% endif %}
+                    </span>
+                </div>
+            </div>
+
+            <div class="panel">
+                <div class="panel-title">🌍 物理定位 (Geolocation)</div>
+                <div id="map"></div>
+                <div class="info-row" style="margin-top:10px;"><span class="label">经纬度</span><span class="value">{{ data.get('lat') }}, {{ data.get('lon') }}</span></div>
+                <div class="info-row"><span class="label">时区</span><span class="value">{{ data.get('timezone', '-') }}</span></div>
+            </div>
+
+            <div class="panel">
+                <div class="panel-title">🕵️ 浏览器环境 (Client Side)</div>
+                <div class="info-row"><span class="label">操作系统</span><span class="value" id="os">-</span></div>
+                <div class="info-row"><span class="label">屏幕分辨率</span><span class="value" id="screen">-</span></div>
+                <div class="info-row"><span class="label">浏览器语言</span><span class="value" id="lang">-</span></div>
+                <div class="info-row"><span class="label">浏览器核心</span><span class="value" id="browser">-</span></div>
+                <div class="info-row"><span class="label">当前时间</span><span class="value" id="time">-</span></div>
+            </div>
+        </div>
+
+        <div style="text-align: center; margin-top: 30px; color: #475569; font-size: 12px;">
+            Data powered by ip-api & Cloudflare | User-Agent: {{ ua }}
         </div>
     </div>
+
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <script>
+        // 1. 初始化地图
+        var lat = {{ data.get('lat', 0) }};
+        var lon = {{ data.get('lon', 0) }};
+        if (lat && lon) {
+            var map = L.map('map').setView([lat, lon], 13);
+            L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
+                attribution: '&copy; OpenStreetMap contributors'
+            }).addTo(map);
+            L.marker([lat, lon]).addTo(map)
+                .bindPopup('IP 归属地: {{ data.get("city") }}')
+                .openPopup();
+        } else {
+            document.getElementById('map').innerHTML = '<div style="text-align:center; line-height:250px; color:#64748b;">无法获取地图坐标</div>';
+        }
+
+        // 2. 浏览器指纹检测
+        document.getElementById('screen').innerText = window.screen.width + ' x ' + window.screen.height;
+        document.getElementById('lang').innerText = navigator.language;
+        document.getElementById('time').innerText = new Date().toLocaleTimeString();
+        
+        // 简单的 OS 和 浏览器检测
+        var ua = navigator.userAgent;
+        var os = "未知系统";
+        if (ua.indexOf("Win") != -1) os = "Windows";
+        if (ua.indexOf("Mac") != -1) os = "macOS";
+        if (ua.indexOf("Linux") != -1) os = "Linux";
+        if (ua.indexOf("Android") != -1) os = "Android";
+        if (ua.indexOf("iPhone") != -1) os = "iOS";
+        document.getElementById('os').innerText = os;
+
+        var browser = "未知浏览器";
+        if (ua.indexOf("Chrome") != -1) browser = "Chrome";
+        if (ua.indexOf("Firefox") != -1) browser = "Firefox";
+        if (ua.indexOf("Safari") != -1 && ua.indexOf("Chrome") == -1) browser = "Safari";
+        document.getElementById('browser').innerText = browser;
+    </script>
 </body>
 </html>
